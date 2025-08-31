@@ -13,13 +13,10 @@ on:
         default: |
           #!/bin/bash
           #
-      package_jsons_to_rewrite:
+      difference_path:
         type: string
-        description: 'package.jsons to rewrite (json)'
-        default: 'package.json'
-      use_external_app_to_release:
-        type: boolean
-        default: false
+        description: 'Changelog file to use'
+        default: 'DIFFERENCE.md'
       indent:
         type: string
         description: '`tab` or number of spaces'
@@ -70,63 +67,151 @@ jobs:
         env:
           CURRENT_VERSION: ${{ steps.get_current_version.outputs.current_version }}
         with:
-          script: ${{ inputs.version_increment_script }}
+          script: |
+            const currentVersion = process.env.CURRENT_VERSION;
+            console.log('DEBUG: Current version: ' + currentVersion);
+            
+            // Yamisskey形式の簡易チェック
+            if (currentVersion.includes('-nayami-') || currentVersion.includes('-yami-')) {
+              console.log('DEBUG: Yamisskey version format detected');
+              
+              const parts = currentVersion.split('-');
+              if (parts.length >= 3) {
+                const baseVersion = parts[0];
+                const yamisskeyType = parts[1];
+                const yamisskeyVersions = parts[2].split('.');
+                
+                if (yamisskeyVersions.length === 3) {
+                  const yMajor = yamisskeyVersions[0];
+                  const yMinor = yamisskeyVersions[1];
+                  const yPatch = yamisskeyVersions[2];
+                  
+                  // nayamiの場合はyamiに変換（リリース用）、yamiの場合はパッチ番号をインクリメント
+                  let releaseType = 'yami';
+                  let releasePatch = yPatch;
+                  
+                  if (yamisskeyType === 'nayami') {
+                    console.log('DEBUG: Converting nayami to yami for release');
+                    // nayami→yamiの変換（パッチ番号はそのまま）
+                  } else if (yamisskeyType === 'yami') {
+                    console.log('DEBUG: Incrementing existing yami version');
+                    // yamiの場合はパッチ番号をインクリメント
+                    releasePatch = Number(yPatch) + 1;
+                  }
+                  
+                  const releaseVersion = baseVersion + '-' + releaseType + '-' + yMajor + '.' + yMinor + '.' + releasePatch;
+                  console.log('DEBUG: Release version: ' + releaseVersion);
+                  return releaseVersion;
+                }
+              }
+            }
+            
+            // フォールバック: 基本的なバージョン形式
+            console.log('DEBUG: Using basic version increment');
+            const versionParts = currentVersion.split('.');
+            if (versionParts.length >= 3) {
+              const major = versionParts[0];
+              const minor = versionParts[1];
+              const patchPart = versionParts[2];
+              const patch = Number(patchPart.split('-')[0]) + 1;
+              
+              const incrementedVersion = major + '.' + minor + '.' + patch;
+              console.log('DEBUG: Basic increment result: ' + incrementedVersion);
+              return incrementedVersion;
+            }
+            
+            throw new Error('Unsupported version format: ' + currentVersion);
           result-encoding: string
         id: target_version
-      - name: beta 0
-        run: echo "result=$TARGET_VERSION-$PRERELEASE_CHANNEL.0" >> $GITHUB_OUTPUT
+      - name: Set release version
+        run: |
+          # シンプルなYamisskeyバージョン検出（複雑な正規表現を回避）
+          if [[ "$TARGET_VERSION" == *"-nayami-"* ]] || [[ "$TARGET_VERSION" == *"-yami-"* ]]; then
+            echo "result=$TARGET_VERSION" >> $GITHUB_OUTPUT
+            echo "✅ Yamisskey version detected - using pure format: $TARGET_VERSION"
+          else
+            # draft_prerelease_channelが設定されている場合のみサフィックスを追加
+            if [[ -n "$PRERELEASE_CHANNEL" ]]; then
+              echo "result=$TARGET_VERSION-$PRERELEASE_CHANNEL.0" >> $GITHUB_OUTPUT
+              echo "Regular version with prerelease: $TARGET_VERSION -> $TARGET_VERSION-$PRERELEASE_CHANNEL.0"
+            else
+              echo "result=$TARGET_VERSION" >> $GITHUB_OUTPUT
+              echo "Regular version: $TARGET_VERSION"
+            fi
+          fi
         id: release_version
         env:
           TARGET_VERSION: ${{ steps.target_version.outputs.result }}
           PRERELEASE_CHANNEL: ${{ inputs.draft_prerelease_channel }}
-      # バージョンをpackage.jsonに書き込み
-      - name: Write version
-        uses: misskey-dev/release-manager-actions/.github/actions/rewrite-package-json@v2
-        with:
-          version: ${{ steps.release_version.outputs.result }}
-          package_jsons: ${{ inputs.package_jsons_to_rewrite }}
-          indent: ${{ inputs.indent }}
-      # CHANGELOG.mdのUnreleasedの内容を取得
+      # Yamisskey運用：package.json手動管理（自動編集なし）
+      - name: Skip package.json update (Yamisskey manual workflow)
+        run: |
+          echo "INFO: Yamisskeyワークフローでは手動でpackage.jsonを管理します"
+          echo "INFO: ターゲット作成時も手動バージョン管理を前提とします"
+          echo "INFO: DIFFERENCE.md更新、タグ作成、リリース作成のみ実行します"
+          echo "INFO: Release version: $VERSION_NAME"
+        env:
+          VERSION_NAME: ${{ steps.release_version.outputs.result }}
+      # DIFFERENCE.mdのUnreleasedの内容を取得
       - name: Get changelog
-        uses: misskey-dev/release-manager-actions/.github/actions/get-changelog@v2
+        uses: yamisskey-dev/release-manager-actions/.github/actions/get-changelog@v2-yamisskey
         with:
           version: Unreleased
+          difference_path: ${{ inputs.difference_path }}
         id: changelog
-      # CHANGELOG.mdのバージョンの書き換え
-      - name: Modify CHANGELOG.md
+      # DIFFERENCE.mdのバージョンの書き換え
+      - name: Modify DIFFERENCE.md
         run: |
-          sed -i "s/## Unreleased/## $TARGET_VERSION/" CHANGELOG.md
+          sed -i "s/## Unreleased/## $TARGET_VERSION/" "$DIFFERENCE_PATH"
         env:
           TARGET_VERSION: ${{ steps.target_version.outputs.result }}
-      # pushとタグを作成
-      - name: Commit version
+          DIFFERENCE_PATH: ${{ inputs.difference_path }}
+      # DIFFERENCE.md変更をコミットしてタグを作成
+      - name: Commit DIFFERENCE.md and create tag
         run: |
-          git commit -am "Bump version to $VERSION_NAME"
-          git push
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "INFO: Changes detected (DIFFERENCE.md), committing..."
+            git commit -am "Bump version to $VERSION_NAME"
+            git push
+          else
+            echo "INFO: No changes to commit"
+          fi
+          
+          # 既存タグをチェックして、存在する場合は削除してから作成
+          if git ls-remote --tags origin | grep -q "refs/tags/$VERSION_NAME$"; then
+            echo "Tag $VERSION_NAME already exists, deleting remote tag..."
+            git push origin ":refs/tags/$VERSION_NAME"
+            # ローカルタグも削除
+            git tag -d "$VERSION_NAME" 2>/dev/null || true
+          fi
+          
           git tag "$VERSION_NAME"
           git push origin "$VERSION_NAME"
+          echo "Tag $VERSION_NAME successfully pushed to remote"
         env:
           VERSION_NAME: ${{ steps.release_version.outputs.result }}
           TARGET_VERSION: ${{ steps.target_version.outputs.result }}
-      # リリースを作成
+      # 外部アプリトークンを作成（PR作成とリリース作成の両方で使用）
       - uses: actions/create-github-app-token@v1
         id: release-app-token
-        if: inputs.use_external_app_to_release
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      # リリースを作成（タグプッシュ後）
       - name: Create release
         env:
-          GITHUB_TOKEN: ${{ inputs.use_external_app_to_release && steps.release-app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
           VERSION_NAME: ${{ steps.release_version.outputs.result }}
           CHANGELOG: ${{ steps.changelog.outputs.changelog }}
         run: |
+          # タグが正しくプッシュされているかを確認してからリリース作成
+          echo "Creating release for tag: $VERSION_NAME"
           gh release create "$VERSION_NAME" --prerelease --title "$VERSION_NAME" --notes "$CHANGELOG"
       # PRを作成
       - name: Create PR
         run: |
-          gh pr create --draft --title "Release: $TARGET_VERSION" --body "$CHANGELOG" --head "$GITHUB_REF_NAME" --base "$STABLE_BRANCH"
+          gh pr create --draft --title "Release: $TARGET_VERSION" --body "$CHANGELOG" --head "$GITHUB_REF_NAME" --base "master"
         env:
+          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
           TARGET_VERSION: ${{ steps.target_version.outputs.result }}
           CHANGELOG: ${{ steps.changelog.outputs.changelog }}
-          STABLE_BRANCH: ${{ inputs.stable_branch }}

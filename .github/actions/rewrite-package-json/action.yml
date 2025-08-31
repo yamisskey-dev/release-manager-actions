@@ -6,7 +6,7 @@ inputs:
     required: true
   package_jsons:
     description: "package.jsons to rewrite"
-    default: 'package.json'
+    default: ''
   indent:
     description: '`tab` or number of spaces'
     default: tab
@@ -16,11 +16,119 @@ runs:
     # バージョンをpackage.jsonに書き込み
     - name: Write version
       run: |
-        # keep using ${{ inputs.package_jsons }} for array declaration
-        declare -a package_jsons=(${{ inputs.package_jsons }})
-        for package_json in ${package_jsons[@]}; do
-          jq $INDENT_OPTION ".version = \"$VERSION\"" "${package_json}" > "${package_json}.tmp" && mv "${package_json}.tmp" "${package_json}"
-        done
+        echo "DEBUG: package_jsons input: '${{ inputs.package_jsons }}'"
+        echo "DEBUG: version: '$VERSION'"
+        echo "DEBUG: indent option: '$INDENT_OPTION'"
+        
+        # Yamisskeyプロジェクト用にシンプル化：package.jsonのみを処理
+        package_json="package.json"
+        echo "DEBUG: Processing file: $package_json"
+        
+        if [[ -f "$package_json" ]]; then
+          echo "DEBUG: File exists, updating version..."
+          echo "DEBUG: Before update:"
+          cat "$package_json"
+          echo "DEBUG: First few lines to check indentation:"
+          head -5 "$package_json"
+          
+          echo "DEBUG: Using enhanced sed replacement with absolute format preservation"
+          
+          # ファイルサイズとハッシュを記録（改変検出用）
+          original_size=$(wc -c < "$package_json")
+          original_hash=$(sha256sum "$package_json" | cut -d' ' -f1)
+          echo "DEBUG: Original file size: $original_size bytes, hash: $original_hash"
+          
+          # 現在のバージョンを取得
+          current_version=$(jq -r '.version' "$package_json")
+          echo "DEBUG: Current version: '$current_version'"
+          echo "DEBUG: Target version: '$VERSION'"
+          
+          # 非破壊的なsed置換（一時ファイルに出力）
+          temp_file="${package_json}.tmp.$$"
+          sed "s|\"version\": \"$current_version\"|\"version\": \"$VERSION\"|" "$package_json" > "$temp_file"
+          
+          # 置換結果の詳細検証
+          if [[ -f "$temp_file" ]]; then
+            new_size=$(wc -c < "$temp_file")
+            new_hash=$(sha256sum "$temp_file" | cut -d' ' -f1)
+            echo "DEBUG: New file size: $new_size bytes, hash: $new_hash"
+            
+            # サイズの変化を確認（バージョン文字列長の違いのみ許可）
+            version_len_diff=$((${#VERSION} - ${#current_version}))
+            expected_size_diff=$version_len_diff
+            actual_size_diff=$((new_size - original_size))
+            echo "DEBUG: Version length diff: $version_len_diff, Expected size diff: $expected_size_diff, Actual size diff: $actual_size_diff"
+            
+            # JSONの有効性を確認
+            if jq empty "$temp_file" 2>/dev/null; then
+              verified_version=$(jq -r '.version' "$temp_file")
+              echo "DEBUG: Verified new version: '$verified_version'"
+              
+              if [[ "$verified_version" == "$VERSION" ]]; then
+                # 成功：一時ファイルで元ファイルを置き換え
+                mv "$temp_file" "$package_json"
+                echo "DEBUG: ✅ Version successfully updated and file replaced"
+                
+                # 最終確認
+                final_version=$(jq -r '.version' "$package_json")
+                final_size=$(wc -c < "$package_json")
+                final_hash=$(sha256sum "$package_json" | cut -d' ' -f1)
+                echo "DEBUG: Final verification - version: '$final_version', size: $final_size bytes, hash: $final_hash"
+                
+                if [[ "$final_version" == "$VERSION" ]]; then
+                  echo "DEBUG: ✅ Final verification passed - Format preservation successful"
+                else
+                  echo "ERROR: ❌ Final verification failed - version mismatch"
+                  exit 1
+                fi
+              else
+                echo "ERROR: Version verification failed - expected '$VERSION', got '$verified_version'"
+                rm -f "$temp_file"
+                exit 1
+              fi
+            else
+              echo "ERROR: Generated JSON is invalid"
+              rm -f "$temp_file"
+              exit 1
+            fi
+          else
+            echo "ERROR: Failed to create temporary file"
+            exit 1
+          fi
+          
+          # クリーンアップ
+          rm -f "$temp_file" 2>/dev/null
+          
+          echo "DEBUG: After update (complete file dump):"
+          cat "$package_json"
+          echo "DEBUG: ═══════════════════════════════════"
+          echo "DEBUG: File analysis after update:"
+          echo "DEBUG: Line count: $(wc -l < "$package_json")"
+          echo "DEBUG: Character count: $(wc -c < "$package_json")"
+          echo "DEBUG: First 10 lines:"
+          head -10 "$package_json"
+          echo "DEBUG: ═══════════════════════════════════"
+          
+          # 最終的なフォーマット検証
+          if grep -q $'{\n\t' "$package_json"; then
+            echo "DEBUG: ✅ Tab indentation confirmed preserved"
+          else
+            echo "WARNING: ⚠️ Tab indentation may not be preserved"
+          fi
+          
+          # ファイルが1行になっていないか確認
+          line_count=$(wc -l < "$package_json")
+          if [[ $line_count -gt 3 ]]; then
+            echo "DEBUG: ✅ Multi-line format confirmed (lines: $line_count)"
+          else
+            echo "WARNING: ⚠️ File may have been minified (lines: $line_count)"
+          fi
+          
+          echo "DEBUG: ✅ Updated $package_json successfully with format preservation"
+        else
+          echo "ERROR: File not found: $package_json"
+          exit 1
+        fi
       shell: bash
       env:
         INDENT_OPTION: ${{ inputs.indent != 'tab' && format('--indent {0}', inputs.indent) || '--tab' }}

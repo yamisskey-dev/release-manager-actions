@@ -11,19 +11,16 @@ on:
         type: string
         description: User name
         default: github-actions[bot]
-      package_jsons_to_rewrite:
-        type: string
-        description: 'package.jsons to rewrite (json)'
-        default: 'package.json'
       changes_template:
         type: string
         description: 'Template for CHANGELOG.md'
         default: |
           ## Unreleased
           -
-      use_external_app_to_release:
-        type: boolean
-        default: false
+      difference_path:
+        type: string
+        description: 'Changelog file to use'
+        default: 'DIFFERENCE.md'
       indent:
         type: string
         description: '`tab` or number of spaces'
@@ -60,7 +57,6 @@ jobs:
 
       - uses: actions/create-github-app-token@v1
         id: release-app-token
-        if: inputs.use_external_app_to_release
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
@@ -71,7 +67,7 @@ jobs:
           gh pr view "$PR_NUMBER" --json mergeable
         env:
           PR_NUMBER: ${{ inputs.pr_number }}
-          GITHUB_TOKEN: ${{ inputs.use_external_app_to_release && steps.release-app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
       - name: Sleep
         run: sleep 5s
 
@@ -81,7 +77,7 @@ jobs:
           echo "data=$(gh pr view "$PR_NUMBER" --json baseRefName,reviewDecision,isDraft,mergeStateStatus,statusCheckRollup,mergeable)" >> $GITHUB_OUTPUT
         env:
           PR_NUMBER: ${{ inputs.pr_number }}
-          GITHUB_TOKEN: ${{ inputs.use_external_app_to_release && steps.release-app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
       - name: 'Check Mergeable: compare'
         uses: actions/script@v7
         env:
@@ -93,40 +89,47 @@ jobs:
               throw new Error('PR is draft');
             }
             if (pr.reviewDecision !== 'APPROVED') {
-              throw new Error(`reviewDecision is not APPROVED (${pr.reviewDecision}). You must approve the PR before merging.`);
+              throw new Error('reviewDecision is not APPROVED (' + pr.reviewDecision + '). You must approve the PR before merging.');
             }
             if (pr.mergeable !== 'MERGEABLE') {
-              throw new Error(`Not mergeable: ${pr.mergeable}`);
+              throw new Error('Not mergeable: ' + pr.mergeable);
             }
             if (pr.mergeStateStatus !== 'CLEAN' && pr.mergeStateStatus !== 'BLOCKED') {
-              throw new Error(`MergeStateStatus is not CLEAN: ${pr.mergeStateStatus}`);
+              throw new Error('MergeStateStatus is not CLEAN: ' + pr.mergeStateStatus);
             }
             if (pr.statusCheckRollup.find(s => s.conclusion !== 'SUCCESS' && s.conclusion !== 'COMPLETED' && s.state !== 'SUCCESS' && s.state !== 'COMPLETED')) {
               throw new Error('Not all status checks are success');
             }
 
-      # バージョンをpackage.jsonに書き込み
-      - name: Write version
-        uses: misskey-dev/release-manager-actions/.github/actions/rewrite-package-json@v2
-        with:
-          version: ${{ steps.v.outputs.target_version }}
-          package_jsons: ${{ inputs.package_jsons_to_rewrite }}
-          indent: ${{ inputs.indent }}
-      # commit, push
-      - name: Commit version
+      # Yamisskey運用：package.json手動管理（自動編集なし）
+      - name: Skip package.json update (Yamisskey manual workflow)
+        run: |
+          echo "INFO: Yamisskeyワークフローでは手動でpackage.jsonを管理します"
+          echo "INFO: nayami→yamiの変更は手動コンフリクト解決で実行済みと想定"
+          echo "INFO: タグ作成とリリース作成のみ実行します"
+          echo "INFO: Target version: $TARGET_VERSION"
+        env:
+          TARGET_VERSION: ${{ steps.v.outputs.target_version }}
+
+      # commit, push（DIFFERENCE.md変更がある場合のみ）
+      - name: Commit changes (if any)
         run: |
           if [ -n "$(git status --porcelain)" ]; then
+            echo "INFO: Changes detected (likely DIFFERENCE.md), committing..."
             git commit -am "Release: $TARGET_VERSION"
             git push
+          else
+            echo "INFO: No changes to commit (expected for manual workflow)"
           fi
         env:
           TARGET_VERSION: ${{ steps.v.outputs.target_version }}
 
-      # CHANGELOG.mdの内容を取得
+      # DIFFERENCE.mdの内容を取得
       - name: Get changelog
-        uses: misskey-dev/release-manager-actions/.github/actions/get-changelog@v2
+        uses: yamisskey-dev/release-manager-actions/.github/actions/get-changelog@v2-yamisskey
         with:
           version: ${{ steps.v.outputs.target_version }}
+          difference_path: ${{ inputs.difference_path }}
         id: changelog
 
       - name: Create tag
@@ -139,7 +142,7 @@ jobs:
       # リリースを作成
       - name: Create release
         env:
-          GITHUB_TOKEN: ${{ inputs.use_external_app_to_release && steps.release-app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
           TARGET_VERSION: ${{ steps.v.outputs.target_version }}
           CHANGELOG: ${{ steps.changelog.outputs.changelog }}
         run: |
@@ -157,14 +160,17 @@ jobs:
           retry_wait_seconds: 5
         env:
           PR_NUMBER: ${{ inputs.pr_number }}
-          GITHUB_TOKEN: ${{ inputs.use_external_app_to_release && steps.release-app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
 
-      # CHANGELOG.mdにUnreleasedのテンプレートを追加
-      - name: Prepend CHANGELOG template
+      # DIFFERENCE.mdにUnreleasedのテンプレートを追加
+      - name: Prepend DIFFERENCE template
         env:
           CHANGES_TEMPLATE: ${{ inputs.changes_template }}
-        run: sed -i "$(sed -n '/^## /=' CHANGELOG.md | head -1)i $(echo "${CHANGES_TEMPLATE}" | sed -r 's/$/\\n/' | while IFS= read -r line; do echo -n "$line"; done)" CHANGELOG.md
-      - name: Update CHANGELOG.md (prepend template)
+          DIFFERENCE_PATH: ${{ inputs.difference_path }}
+        run: sed -i "$(sed -n '/^## /=' "$DIFFERENCE_PATH" | head -1)i $(echo "${CHANGES_TEMPLATE}" | sed -r 's/$/\\n/' | while IFS= read -r line; do echo -n "$line"; done)" "$DIFFERENCE_PATH"
+      - name: Update DIFFERENCE.md (prepend template)
+        env:
+          DIFFERENCE_PATH: ${{ inputs.difference_path }}
         run: |
-          git commit -am "[skip ci] Update CHANGELOG.md (prepend template)"
+          git commit -am "[skip ci] Update $DIFFERENCE_PATH (prepend template)"
           git push

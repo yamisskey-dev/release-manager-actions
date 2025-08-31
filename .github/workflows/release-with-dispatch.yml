@@ -37,28 +37,28 @@ jobs:
       pr_number: ${{ steps.get_pr.outputs.pr_number }}
     steps:
       - uses: actions/checkout@v4
-      # headが$GITHUB_REF_NAME, baseが$STABLE_BRANCHかつopenのPRを1つ取得
+      # headが$GITHUB_REF_NAME, baseがmasterかつopenのPRを1つ取得
       - name: Get PRs
         run: |
-          echo "pr_number=$(gh pr list --limit 1 --search "head:$GITHUB_REF_NAME base:$STABLE_BRANCH is:open" --json number  --jq '.[] | .number')" >> $GITHUB_OUTPUT
+          echo "pr_number=$(gh pr list --limit 1 --search "head:$GITHUB_REF_NAME base:master is:open" --json number  --jq '.[] | .number')" >> $GITHUB_OUTPUT
         id: get_pr
-        env:
-          STABLE_BRANCH: ${{ vars.STABLE_BRANCH }}
 
   merge:
-    uses: misskey-dev/release-manager-actions/.github/workflows/merge.yml@v2
+    uses: yamisskey-dev/release-manager-actions/.github/workflows/merge.yml@v2-yamisskey
     needs: get-pr
     if: ${{ needs.get-pr.outputs.pr_number != '' && inputs.merge == true }}
     with:
       pr_number: ${{ needs.get-pr.outputs.pr_number }}
       user: 'github-actions[bot]'
-      package_jsons_to_rewrite: ${{ vars.PACKAGE_JSONS_TO_REWRITE }}
+      difference_path: 'DIFFERENCE.md'
       # Text to prepend to the changelog
       # The first line must be `## Unreleased`
       changes_template: |
         ## Unreleased
-
-        ### General
+        ### Feat
+        -
+        
+        ### Enhance
         -
         
         ### Client
@@ -67,22 +67,20 @@ jobs:
         ### Server
         -
         
-      use_external_app_to_release: ${{ vars.USE_RELEASE_APP == 'true' }}
-      indent: ${{ vars.INDENT }}
+      indent: '\t'
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
   create-prerelease:
-    uses: misskey-dev/release-manager-actions/.github/workflows/create-prerelease.yml@v2
+    uses: yamisskey-dev/release-manager-actions/.github/workflows/create-prerelease.yml@v2-yamisskey
     needs: get-pr
     if: ${{ needs.get-pr.outputs.pr_number != '' && inputs.merge != true  }}
     with:
       pr_number: ${{ needs.get-pr.outputs.pr_number }}
       user: 'github-actions[bot]'
-      package_jsons_to_rewrite: ${{ vars.PACKAGE_JSONS_TO_REWRITE }}
-      use_external_app_to_release: ${{ vars.USE_RELEASE_APP == 'true' }}
-      indent: ${{ vars.INDENT }}
+      difference_path: 'DIFFERENCE.md'
+      indent: '\t'
       draft_prerelease_channel: alpha
       ready_start_prerelease_channel: beta
       prerelease_channel: ${{ inputs.start-rc && 'rc' || '' }}
@@ -92,7 +90,7 @@ jobs:
       RELEASE_APP_PRIVATE_KEY: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
 
   create-target:
-    uses: misskey-dev/release-manager-actions/.github/workflows/create-target.yml@v2
+    uses: yamisskey-dev/release-manager-actions/.github/workflows/create-target.yml@v2-yamisskey
     needs: get-pr
     if: ${{ needs.get-pr.outputs.pr_number == '' }}
     with:
@@ -100,22 +98,61 @@ jobs:
       # The script for version increment.
       # process.env.CURRENT_VERSION: The current version.
       #
-      # Misskey calender versioning (yyyy.MM.patch) example
+      # Yamisskey versioning (yyyy.MM.patch-nayami-x.x.x or yyyy.MM.patch-yami-x.x.x) example
       version_increment_script: |
-        const now = new Date();
-        const year = now.toLocaleDateString('en-US', { year: 'numeric', timeZone: 'Asia/Tokyo' });
-        const month = now.toLocaleDateString('en-US', { month: 'numeric', timeZone: 'Asia/Tokyo' });
-        const [major, minor, _patch] = process.env.CURRENT_VERSION.split('.');
-        const patch = Number(_patch.split('-')[0]);
-        if (Number.isNaN(patch)) {
-          console.error('Invalid patch version', year, month, process.env.CURRENT_VERSION, major, minor, _patch);
-          throw new Error('Invalid patch version');
+        const currentVersion = process.env.CURRENT_VERSION;
+        console.log('DEBUG: Current version: ' + currentVersion);
+        
+        // Yamisskey形式の簡易チェック
+        if (currentVersion.includes('-nayami-') || currentVersion.includes('-yami-')) {
+          console.log('DEBUG: Yamisskey version format detected');
+          
+          const parts = currentVersion.split('-');
+          if (parts.length >= 3) {
+            const baseVersion = parts[0];
+            const yamisskeyType = parts[1];
+            const yamisskeyVersions = parts[2].split('.');
+            
+            if (yamisskeyVersions.length === 3) {
+              const yMajor = yamisskeyVersions[0];
+              const yMinor = yamisskeyVersions[1];
+              const yPatch = yamisskeyVersions[2];
+              
+              // nayamiの場合はyamiに変換（リリース用）、yamiの場合はパッチ番号をインクリメント
+              let releaseType = 'yami';
+              let releasePatch = yPatch;
+              
+              if (yamisskeyType === 'nayami') {
+                console.log('DEBUG: Converting nayami to yami for release');
+                // nayami→yamiの変換（パッチ番号はそのまま）
+              } else if (yamisskeyType === 'yami') {
+                console.log('DEBUG: Incrementing existing yami version');
+                // yamiの場合はパッチ番号をインクリメント
+                releasePatch = Number(yPatch) + 1;
+              }
+              
+              const releaseVersion = baseVersion + '-' + releaseType + '-' + yMajor + '.' + yMinor + '.' + releasePatch;
+              console.log('DEBUG: Release version: ' + releaseVersion);
+              return releaseVersion;
+            }
+          }
         }
-        if (year !== major || month !== minor) {
-          return `${year}.${month}.0`;
-        } else {
-          return `${major}.${minor}.${patch + 1}`;
+        
+        // フォールバック：基本的なバージョン形式
+        console.log('DEBUG: Using basic version increment');
+        const versionParts = currentVersion.split('.');
+        if (versionParts.length >= 3) {
+          const major = versionParts[0];
+          const minor = versionParts[1];
+          const patchPart = versionParts[2];
+          const patch = Number(patchPart.split('-')[0]) + 1;
+          
+          const incrementedVersion = major + '.' + minor + '.' + patch;
+          console.log('DEBUG: Basic increment result: ' + incrementedVersion);
+          return incrementedVersion;
         }
+        
+        throw new Error('Unsupported version format: ' + currentVersion);
       ##Semver example
       #version_increment_script: |
       #  const [major, minor, patch] = process.env.CURRENT_VERSION.split('.');
@@ -126,10 +163,9 @@ jobs:
       #  } else {
       #    return `${major}.${minor}.${Number(patch) + 1}`;
       #  }
-      package_jsons_to_rewrite: ${{ vars.PACKAGE_JSONS_TO_REWRITE }}
-      use_external_app_to_release: ${{ vars.USE_RELEASE_APP == 'true' }}
-      indent: ${{ vars.INDENT }}
-      stable_branch: ${{ vars.STABLE_BRANCH }}
+      difference_path: 'DIFFERENCE.md'
+      indent: '\t'
+      stable_branch: master
       draft_prerelease_channel: alpha
     secrets:
       RELEASE_APP_ID: ${{ secrets.RELEASE_APP_ID }}

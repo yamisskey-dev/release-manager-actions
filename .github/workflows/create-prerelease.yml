@@ -11,13 +11,10 @@ on:
         type: string
         description: 'User name'
         default: 'github-actions[bot]'
-      package_jsons_to_rewrite:
+      difference_path:
         type: string
-        description: 'package.jsons to rewrite (json)'
-        default: 'package.json'
-      use_external_app_to_release:
-        type: boolean
-        default: false
+        description: 'Changelog file to use'
+        default: 'DIFFERENCE.md'
       indent:
         type: string
         description: '`tab` or number of spaces'
@@ -60,13 +57,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Initialize
-        uses: misskey-dev/release-manager-actions/.github/actions/checkout-pr@v2
+        uses: yamisskey-dev/release-manager-actions/.github/actions/checkout-pr@v2-yamisskey
         with:
           pr_number: ${{ inputs.pr_number }}
           user: ${{ inputs.user }}
         id: get_pr
       - name: Get target version
-        uses: misskey-dev/release-manager-actions/.github/actions/get-target-version@v2
+        uses: yamisskey-dev/release-manager-actions/.github/actions/get-target-version@v2-yamisskey
         id: v
       # バージョンをインクリメント
       - name: Increment version
@@ -87,9 +84,21 @@ jobs:
             const reset_number_on_channel_change = process.env.reset_number_on_channel_change == 'true';
             const is_draft = process.env.pr_is_draft == 'true';
 
-            const [main, prerelease] = current_version.split('-');
-            const [major, minor, patch] = main.split('.');
-            const [preChannel, _pre] = prerelease.split('.');
+            const parts = current_version.split('-');
+            if (parts.length < 2) {
+              throw new Error('Invalid version format: ' + current_version);
+            }
+
+            const main = parts[0];
+            const prerelease = parts[1];
+            const versionParts = main.split('.');
+            const major = versionParts[0];
+            const minor = versionParts[1];
+            const patch = versionParts[2];
+
+            const prereleaseParts = prerelease.split('.');
+            const preChannel = prereleaseParts[0];
+            const _pre = prereleaseParts[1];
             const pre = Number(_pre);
             if (Number.isNaN(pre)) {
               console.error('Invalid pre version', current_version, major, minor, preChannel, _pre);
@@ -105,56 +114,66 @@ jobs:
             if (is_draft) {
               // if draft PR, force to draft prerelease channel
               if (reset_number_on_channel_change && preChannel != draft_prerelease_channel) throw new Error("The PR was Ready for review but now it's draft, which is unsupported with reset number on channel change.");
-              return `${major}.${minor}.${patch}-${draft_prerelease_channel}.${nextPre}`;
+              return major + '.' + minor + '.' + patch + '-' + draft_prerelease_channel + '.' + nextPre;
             }
             if (prerelease_channel) {
               // if specified, use it
               if (reset_number_on_channel_change && preChannel != prerelease_channel) nextPre = 0;
-              return `${major}.${minor}.${patch}-${prerelease_channel}.${nextPre}`;
+              return major + '.' + minor + '.' + patch + '-' + prerelease_channel + '.' + nextPre;
             }
             if (preChannel === draft_prerelease_channel) {
               // if channel is prerelease, we should change to ready_start_prerelease_channel
               if (reset_number_on_channel_change) nextPre = 0;
-              return `${major}.${minor}.${patch}-${ready_start_prerelease_channel}.${nextPre}`;
+              return major + '.' + minor + '.' + patch + '-' + ready_start_prerelease_channel + '.' + nextPre;
             }
             // otherwise, use previous channel
-            return `${major}.${minor}.${patch}-${preChannel}.${nextPre}`;
+            return major + '.' + minor + '.' + patch + '-' + preChannel + '.' + nextPre;
 
           result-encoding: string
         id: release_version
-      # バージョンをpackage.jsonに書き込み
-      - name: Write version
-        uses: misskey-dev/release-manager-actions/.github/actions/rewrite-package-json@v2
-        with:
-          version: ${{ steps.release_version.outputs.result }}
-          package_jsons: ${{ inputs.package_jsons_to_rewrite }}
-          indent: ${{ inputs.indent }}
-      # push、タグを作成
-      - name: Commit version
+      # Yamisskey運用：package.json手動管理（自動編集なし）
+      - name: Skip package.json update (Yamisskey manual workflow)
         run: |
-          git commit -am "Bump version to $VERSION_NAME"
-          git push
+          echo "INFO: Yamisskeyワークフローでは手動でpackage.jsonを管理します"
+          echo "INFO: プレリリース作成時も手動バージョン管理を前提とします"
+          echo "INFO: タグ作成とリリース作成のみ実行します"
+          echo "INFO: Release version: $VERSION_NAME"
+        env:
+          VERSION_NAME: ${{ steps.release_version.outputs.result }}
+
+      # タグを作成（package.json変更なしのため、コミットは不要）
+      - name: Create tag only (no package.json changes)
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            echo "INFO: Unexpected changes detected, committing..."
+            git commit -am "Bump version to $VERSION_NAME"
+            git push
+          else
+            echo "INFO: No changes to commit (expected for manual workflow)"
+          fi
+          
+          # タグは常に作成
           git tag "$VERSION_NAME"
           git push origin "$VERSION_NAME"
         env:
           VERSION_NAME: ${{ steps.release_version.outputs.result }}
           TARGET_VERSION: ${{ steps.v.outputs.target_version }}
-      # CHANGELOG.mdの内容を取得
+      # DIFFERENCE.mdの内容を取得
       - name: Get changelog
-        uses: misskey-dev/release-manager-actions/.github/actions/get-changelog@v2
+        uses: yamisskey-dev/release-manager-actions/.github/actions/get-changelog@v2-yamisskey
         with:
           version: ${{ steps.v.outputs.target_version }}
+          difference_path: ${{ inputs.difference_path }}
         id: changelog
       # リリースを作成
       - uses: actions/create-github-app-token@v1
         id: release-app-token
-        if: inputs.use_external_app_to_release
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       - name: Create release
         env:
-          GITHUB_TOKEN: ${{ inputs.use_external_app_to_release && steps.release-app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
           VERSION_NAME: ${{ steps.release_version.outputs.result }}
           CHANGELOG: ${{ steps.changelog.outputs.changelog }}
         run: |

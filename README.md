@@ -1,18 +1,27 @@
-# Release Manager
-GitHub Actions workflows for release management of the repository. 
+# Release Manager for Yamisskey
+GitHub Actions workflows for release management of Yamisskey. This version is specifically designed for Yamisskey's unique versioning system.
 
-## Flow
-![](flow.png)
+## Yamisskey Versioning System
+Yamisskey uses a unique versioning format based on Misskey with additional suffix:
+- **Format**: `YYYY.MM.patch-[na]yami-x.x.x`
+- **Progression**: `nayami` (prerelease) → `yami` (stable)
+- **Example**: `2024.8.0-nayami-1.2.3` → `2024.8.0-yami-1.2.3`
 
-Changes since this image was created:
-- We changed prerelease channel for draft pr from `beta` to `alpha`.
-- We changed prerelease channel for ready pr from `rc` to `beta` and `rc`.
-  - We can change `beta` to `rc` by enabling `Start Release Candidate` in dispatch event.
+### Supported Version Types
+- **`nayami`**: Prerelease versions for testing and development
+- **`yami`**: Stable release versions for production
+
+### Misskey Prerelease Support
+Also supports Misskey prerelease versions:
+- **Format**: `YYYY.MM.patch-alpha.1-[na]yami-x.x.x`
+- **Example**: `2024.8.0-alpha.1-nayami-1.2.3`
 
 ## Installation
-### 1. Variable(s) to set
-- Make the stable branch and set the name to `STABLE_BRANCH`
-- If you want to rewrite package.json(s), set `PACKAGE_JSONS_TO_REWRITE` and `INDENT` according to [the Variables clause](#variables).
+### 1. No Variables Required!
+This version has been optimized to work without any Repository Variables configuration:
+- **Stable branch**: Fixed to `master`
+- **Package.json handling**: Fixed to `package.json` with tab indentation
+- **External app usage**: Enabled by default
 
 ### 2. workflows you should copy
 Copy and use these workflows.
@@ -52,10 +61,8 @@ Please execute following installation: https://github.com/actions/create-github-
 
 Open `Install App` tab and install to the repository or whole the user/organization.
 
-Then set `USE_RELEASE_APP` as `true` [as a repository variable](https://docs.github.com/en/actions/learn-github-actions/variables#creating-configuration-variables-for-a-repository).
-
-### 4. Create a ruleset to protect the stable branch
-To maintain the integrity of the stable branch, it is recommended that it prohibit push by ruleset.
+### 4. Create a ruleset to protect the master branch
+To maintain the integrity of the master branch, it is recommended that it prohibit push by ruleset.
 
 |New Branch Ruleset||
 |:--|:--|
@@ -63,7 +70,7 @@ To maintain the integrity of the stable branch, it is recommended that it prohib
 |Bypass list||
 |+ Add bypass|GitHub App you created and installed|
 |Targets|
-|Target branches|stable|
+|Target branches|master|
 |Branch protections||
 |Restrict creations|Enable|
 |Restrict updates|Enable|
@@ -73,23 +80,30 @@ To maintain the integrity of the stable branch, it is recommended that it prohib
 |Block force pushes|Enable|
 
 ## Repository secrets and variables
-### Secrets
+### Secrets (Required)
 <dl>
-<dt><code>RELEASE_APP_ID</code> <i>(optional)</i></dt>
-<dd>See "If you have `on: release` workflows..."</dd>
-<dt><code>RELEASE_APP_PRIVATE_KEY</code> <i>(optional)</i></dt>
-<dd>PEM cert. See "If you have `on: release` workflows..."</dd>
+<dt><code>RELEASE_APP_ID</code></dt>
+<dd>GitHub App ID for external app authentication</dd>
+<dt><code>RELEASE_APP_PRIVATE_KEY</code></dt>
+<dd>PEM certificate for GitHub App authentication</dd>
 </dl>
 
-### Variables
+### Variables (None Required!)
+All configuration has been hardcoded for Yamisskey:
+- **Stable branch**: `master` (fixed)
+- **Package.json**: `package.json` (fixed)
+- **Indentation**: Tab (fixed)
+- **External app**: Enabled (fixed)
 
-<dl>
-<dt><code>STABLE_BRANCH</code></dt>
-<dd>Name of the stable branch targeted by the release PR. **Required.**</dd>
-<dt><code>PACKAGE_JSONS_TO_REWRITE</code> <i>(optional)</i></dt>
-<dd>package.jsons to rewrite version<br>e.g. <code>"package.json" "packages/misskey-js/package.json"</code></dd>
-<dt><code>INDENT</code> <i>(required when PACKAGE_JSONS_TO_REWRITE be set)</i></dt>
-<dd>Indent type of package.json.<br><code>tab</code> or number of spaces</dd>
-<dt><code>USE_RELEASE_APP</code></dt>
-<dd>See "If you have `on: release` workflows..."</dd>
-</dl>
+## Version Increment Logic
+The workflow automatically handles Yamisskey version increments:
+
+1. **From `nayami`**: Increments patch version (e.g., `1.2.3` → `1.2.4`)
+2. **From `yami`**: Increments patch version (e.g., `1.2.3` → `1.2.4`)  
+3. **From non-Yamisskey**: Starts with `nayami-1.0.0`
+
+### Examples
+- `2024.8.0-nayami-1.2.3` → `2024.8.0-nayami-1.2.4`
+- `2024.8.0-yami-1.2.3` → `2024.8.0-yami-1.2.4`
+- `2024.8.0` → `2024.8.0-nayami-1.0.0`
+- `2024.8.0-alpha.1-nayami-1.2.3` → `2024.8.0-alpha.1-nayami-1.2.4`
