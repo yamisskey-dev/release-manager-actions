@@ -166,8 +166,8 @@ jobs:
         env:
           TARGET_VERSION: ${{ steps.target_version.outputs.result }}
           DIFFERENCE_PATH: ${{ inputs.difference_path }}
-      # DIFFERENCE.md変更をコミットしてタグを作成
-      - name: Commit DIFFERENCE.md and create tag
+      # DIFFERENCE.md変更をコミット（タグ作成はmasterマージ時に延期）
+      - name: Commit DIFFERENCE.md (defer tag creation to master merge)
         run: |
           if [ -n "$(git status --porcelain)" ]; then
             echo "INFO: Changes detected (DIFFERENCE.md), committing..."
@@ -176,37 +176,16 @@ jobs:
           else
             echo "INFO: No changes to commit"
           fi
-          
-          # 既存タグをチェックして、存在する場合は削除してから作成
-          if git ls-remote --tags origin | grep -q "refs/tags/$VERSION_NAME$"; then
-            echo "Tag $VERSION_NAME already exists, deleting remote tag..."
-            git push origin ":refs/tags/$VERSION_NAME"
-            # ローカルタグも削除
-            git tag -d "$VERSION_NAME" 2>/dev/null || true
-          fi
-          
-          git tag "$VERSION_NAME"
-          git push origin "$VERSION_NAME"
-          echo "Tag $VERSION_NAME successfully pushed to remote"
+          echo "INFO: タグ作成とリリース作成はmasterブランチマージ時に実行されます"
         env:
           VERSION_NAME: ${{ steps.release_version.outputs.result }}
           TARGET_VERSION: ${{ steps.target_version.outputs.result }}
-      # 外部アプリトークンを作成（PR作成とリリース作成の両方で使用）
+      # 外部アプリトークンを作成（PR作成用）
       - uses: actions/create-github-app-token@v1
         id: release-app-token
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
-      # リリースを作成（タグプッシュ後）
-      - name: Create release
-        env:
-          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
-          VERSION_NAME: ${{ steps.release_version.outputs.result }}
-          CHANGELOG: ${{ steps.changelog.outputs.changelog }}
-        run: |
-          # タグが正しくプッシュされているかを確認してからリリース作成
-          echo "Creating release for tag: $VERSION_NAME"
-          gh release create "$VERSION_NAME" --prerelease --title "$VERSION_NAME" --notes "$CHANGELOG"
       # PRを作成
       - name: Create PR
         run: |
