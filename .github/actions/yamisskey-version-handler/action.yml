@@ -1,5 +1,5 @@
 name: "Yamisskey Version Handler"
-description: "Handle Yamisskey version format (base-nayami-x.x.x or base-yami-x.x.x)"
+description: "Handle Yamisskey version format (base-yami-x.x.x)"
 inputs:
   version:
     description: "Current version"
@@ -16,11 +16,8 @@ outputs:
     description: "Base version (e.g., 2024.8.0)"
     value: ${{ steps.handler.outputs.base_version }}
   yamisskey_version:
-    description: "Yamisskey version suffix (e.g., -nayami-1.2.3 or -yami-1.2.3)"
+    description: "Yamisskey version suffix (e.g., -yami-1.2.3)"
     value: ${{ steps.handler.outputs.yamisskey_version }}
-  yamisskey_type:
-    description: "Yamisskey type (na or empty for yami)"
-    value: ${{ steps.handler.outputs.yamisskey_type }}
 runs:
   using: "composite"
   steps:
@@ -34,28 +31,24 @@ runs:
         script: |
           const version = process.env.VERSION;
           const operation = process.env.OPERATION;
-          
-          // Yamisskeyバージョン形式の正規表現 (nayami, yami対応)
-          const yamisskeyRegex = /^(\d+\.\d+\.\d+)-(na)?yami-(\d+)\.(\d+)\.(\d+)$/;
+
+          // Yamisskeyバージョン形式の正規表現 (yami統一)
+          const yamisskeyRegex = /^(\d+\.\d+\.\d+)-yami-(\d+)\.(\d+)\.(\d+)$/;
           const match = version.match(yamisskeyRegex);
-          
+
           let baseVersion = '';
           let yamisskeyVersion = '';
-          let yamisskeyType = '';
-          
+
           if (match) {
-            const [, base, prefix, major, minor, patch] = match;
+            const [, base, major, minor, patch] = match;
             baseVersion = base;
-            const fullType = prefix ? prefix + 'yami' : 'yami';
-            yamisskeyVersion = '-' + fullType + '-' + major + '.' + minor + '.' + patch;
-            yamisskeyType = prefix || '';
+            yamisskeyVersion = '-yami-' + major + '.' + minor + '.' + patch;
           } else {
             // 通常のバージョン形式の場合
             baseVersion = version.split('-')[0];
             yamisskeyVersion = '';
-            yamisskeyType = '';
           }
-          
+
           // 操作に応じて結果を設定
           let result = '';
           switch (operation) {
@@ -67,23 +60,21 @@ runs:
               break;
             case 'increment_yamisskey':
               if (match) {
-                const [, base, prefix, major, minor, patch] = match;
-                const fullType = prefix ? prefix + 'yami' : 'yami';
-                result = base + '-' + fullType + '-' + major + '.' + minor + '.' + (Number(patch) + 1);
+                const [, base, major, minor, patch] = match;
+                result = base + '-yami-' + major + '.' + minor + '.' + (Number(patch) + 1);
               } else {
-                // 新しいYamisskeyバージョンとして開始（デフォルトはnayami）
-                result = baseVersion + '-nayami-1.0.0';
+                // 新しいYamisskeyバージョンとして開始
+                result = baseVersion + '-yami-1.0.0';
               }
               break;
             default:
               throw new Error(`Unknown operation: ${operation}`);
           }
-          
+
           // 出力を設定
           core.setOutput('result', result);
           core.setOutput('base_version', baseVersion);
           core.setOutput('yamisskey_version', yamisskeyVersion);
-          core.setOutput('yamisskey_type', yamisskeyType);
-          
+
           return result;
         result-encoding: string

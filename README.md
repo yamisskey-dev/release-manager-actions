@@ -3,18 +3,14 @@ GitHub Actions workflows for release management of Yamisskey. This version is sp
 
 ## Yamisskey Versioning System
 Yamisskey uses a unique versioning format based on Misskey with additional suffix:
-- **Format**: `YYYY.MM.patch-[na]yami-x.x.x`
-- **Progression**: `nayami` (prerelease) → `yami` (stable)
-- **Example**: `2024.8.0-nayami-1.2.3` → `2024.8.0-yami-1.2.3`
+- **Format**: `YYYY.MM.patch-yami-x.x.x`
+- **Example**: `2024.8.0-yami-1.2.3` → `2024.8.0-yami-1.2.4`
 
-### Supported Version Types
-- **`nayami`**: Prerelease versions for testing and development
-- **`yami`**: Stable release versions for production
-
-### Misskey Prerelease Support
-Also supports Misskey prerelease versions:
-- **Format**: `YYYY.MM.patch-alpha.1-[na]yami-x.x.x`
-- **Example**: `2024.8.0-alpha.1-nayami-1.2.3`
+### Branch Structure
+Yamisskey uses standard branch names:
+- **`develop`**: Development branch (default branch)
+- **`staging`**: Staging branch for pre-production testing
+- **`master`**: Production release branch
 
 ## Installation
 ### 1. No Variables Required!
@@ -98,12 +94,9 @@ All configuration has been hardcoded for Yamisskey:
 ## Version Increment Logic
 The workflow automatically handles Yamisskey version increments:
 
-1. **From `nayami`**: Increments patch version (e.g., `1.2.3` → `1.2.4`)
-2. **From `yami`**: Increments patch version (e.g., `1.2.3` → `1.2.4`)  
-3. **From non-Yamisskey**: Starts with `nayami-1.0.0`
+1. **From `yami`**: Increments patch version (e.g., `1.2.3` → `1.2.4`)
+2. **From non-Yamisskey**: Starts with `yami-1.0.0`
 
 ### Examples
-- `2024.8.0-nayami-1.2.3` → `2024.8.0-nayami-1.2.4`
 - `2024.8.0-yami-1.2.3` → `2024.8.0-yami-1.2.4`
-- `2024.8.0` → `2024.8.0-nayami-1.0.0`
-- `2024.8.0-alpha.1-nayami-1.2.3` → `2024.8.0-alpha.1-nayami-1.2.4`
+- `2024.8.0` → `2024.8.0-yami-1.0.0`

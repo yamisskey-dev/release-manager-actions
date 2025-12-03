@@ -71,35 +71,23 @@ jobs:
             const currentVersion = process.env.CURRENT_VERSION;
             console.log('DEBUG: Current version: ' + currentVersion);
             
-            // Yamisskey形式の簡易チェック
-            if (currentVersion.includes('-nayami-') || currentVersion.includes('-yami-')) {
+            // Yamisskey形式の簡易チェック (yami統一)
+            if (currentVersion.includes('-yami-')) {
               console.log('DEBUG: Yamisskey version format detected');
-              
+
               const parts = currentVersion.split('-');
               if (parts.length >= 3) {
                 const baseVersion = parts[0];
-                const yamisskeyType = parts[1];
                 const yamisskeyVersions = parts[2].split('.');
-                
+
                 if (yamisskeyVersions.length === 3) {
                   const yMajor = yamisskeyVersions[0];
                   const yMinor = yamisskeyVersions[1];
                   const yPatch = yamisskeyVersions[2];
-                  
-                  // nayamiの場合はyamiに変換（リリース用）、yamiの場合はパッチ番号をインクリメント
-                  let releaseType = 'yami';
-                  let releasePatch = yPatch;
-                  
-                  if (yamisskeyType === 'nayami') {
-                    console.log('DEBUG: Converting nayami to yami for release');
-                    // nayami→yamiの変換（パッチ番号はそのまま）
-                  } else if (yamisskeyType === 'yami') {
-                    console.log('DEBUG: Incrementing existing yami version');
-                    // yamiの場合はパッチ番号をインクリメント
-                    releasePatch = Number(yPatch) + 1;
-                  }
-                  
-                  const releaseVersion = baseVersion + '-' + releaseType + '-' + yMajor + '.' + yMinor + '.' + releasePatch;
+
+                  // yamiパッチ番号をインクリメント
+                  const releasePatch = Number(yPatch) + 1;
+                  const releaseVersion = baseVersion + '-yami-' + yMajor + '.' + yMinor + '.' + releasePatch;
                   console.log('DEBUG: Release version: ' + releaseVersion);
                   return releaseVersion;
                 }
@@ -125,8 +113,8 @@ jobs:
         id: target_version
       - name: Set release version
         run: |
-          # シンプルなYamisskeyバージョン検出（複雑な正規表現を回避）
-          if [[ "$TARGET_VERSION" == *"-nayami-"* ]] || [[ "$TARGET_VERSION" == *"-yami-"* ]]; then
+          # シンプルなYamisskeyバージョン検出 (yami統一)
+          if [[ "$TARGET_VERSION" == *"-yami-"* ]]; then
             echo "result=$TARGET_VERSION" >> $GITHUB_OUTPUT
             echo "✅ Yamisskey version detected - using pure format: $TARGET_VERSION"
           else

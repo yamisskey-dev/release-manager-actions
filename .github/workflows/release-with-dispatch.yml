@@ -98,46 +98,34 @@ jobs:
       # The script for version increment.
       # process.env.CURRENT_VERSION: The current version.
       #
-      # Yamisskey versioning (yyyy.MM.patch-nayami-x.x.x or yyyy.MM.patch-yami-x.x.x) example
+      # Yamisskey versioning (yyyy.MM.patch-yami-x.x.x) example
       version_increment_script: |
         const currentVersion = process.env.CURRENT_VERSION;
         console.log('DEBUG: Current version: ' + currentVersion);
-        
-        // Yamisskey形式の簡易チェック
-        if (currentVersion.includes('-nayami-') || currentVersion.includes('-yami-')) {
+
+        // Yamisskey形式の簡易チェック (yami統一)
+        if (currentVersion.includes('-yami-')) {
           console.log('DEBUG: Yamisskey version format detected');
-          
+
           const parts = currentVersion.split('-');
           if (parts.length >= 3) {
             const baseVersion = parts[0];
-            const yamisskeyType = parts[1];
             const yamisskeyVersions = parts[2].split('.');
-            
+
             if (yamisskeyVersions.length === 3) {
               const yMajor = yamisskeyVersions[0];
               const yMinor = yamisskeyVersions[1];
               const yPatch = yamisskeyVersions[2];
-              
-              // nayamiの場合はyamiに変換（リリース用）、yamiの場合はパッチ番号をインクリメント
-              let releaseType = 'yami';
-              let releasePatch = yPatch;
-              
-              if (yamisskeyType === 'nayami') {
-                console.log('DEBUG: Converting nayami to yami for release');
-                // nayami→yamiの変換（パッチ番号はそのまま）
-              } else if (yamisskeyType === 'yami') {
-                console.log('DEBUG: Incrementing existing yami version');
-                // yamiの場合はパッチ番号をインクリメント
-                releasePatch = Number(yPatch) + 1;
-              }
-              
-              const releaseVersion = baseVersion + '-' + releaseType + '-' + yMajor + '.' + yMinor + '.' + releasePatch;
+
+              // yamiパッチ番号をインクリメント
+              const releasePatch = Number(yPatch) + 1;
+              const releaseVersion = baseVersion + '-yami-' + yMajor + '.' + yMinor + '.' + releasePatch;
               console.log('DEBUG: Release version: ' + releaseVersion);
               return releaseVersion;
             }
           }
         }
-        
+
         // フォールバック：基本的なバージョン形式
         console.log('DEBUG: Using basic version increment');
         const versionParts = currentVersion.split('.');
@@ -146,12 +134,12 @@ jobs:
           const minor = versionParts[1];
           const patchPart = versionParts[2];
           const patch = Number(patchPart.split('-')[0]) + 1;
-          
+
           const incrementedVersion = major + '.' + minor + '.' + patch;
           console.log('DEBUG: Basic increment result: ' + incrementedVersion);
           return incrementedVersion;
         }
-        
+
         throw new Error('Unsupported version format: ' + currentVersion);
       ##Semver example
       #version_increment_script: |

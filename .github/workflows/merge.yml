@@ -105,7 +105,6 @@ jobs:
       - name: Skip package.json update (Yamisskey manual workflow)
         run: |
           echo "INFO: Yamisskeyワークフローでは手動でpackage.jsonを管理します"
-          echo "INFO: nayami→yamiの変更は手動コンフリクト解決で実行済みと想定"
           echo "INFO: タグ作成とリリース作成のみ実行します"
           echo "INFO: Target version: $TARGET_VERSION"
         env:

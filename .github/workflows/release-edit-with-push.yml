@@ -3,7 +3,7 @@ name: "Release Manager: sync DIFFERENCE.md with PR"
 on:
   push:
     branches:
-      - nayami
+      - develop
     paths:
       - 'DIFFERENCE.md'
 
