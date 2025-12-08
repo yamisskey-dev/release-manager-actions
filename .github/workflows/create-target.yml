@@ -61,54 +61,29 @@ jobs:
           jq -r '.version' package.json
           echo "current_version=$(jq -r '.version' package.json)" >> $GITHUB_OUTPUT
         id: get_current_version
-      # バージョンをインクリメント
-      - name: Increment version
+      # バージョンを取得（Yamisskey運用: package.jsonの値をそのまま使用）
+      - name: Get version (Yamisskey manual workflow)
         uses: actions/script@v7
         env:
           CURRENT_VERSION: ${{ steps.get_current_version.outputs.current_version }}
+          VERSION_INCREMENT_SCRIPT: ${{ inputs.version_increment_script }}
         with:
           script: |
             const currentVersion = process.env.CURRENT_VERSION;
-            console.log('DEBUG: Current version: ' + currentVersion);
-            
-            // Yamisskey形式の簡易チェック (yami統一)
-            if (currentVersion.includes('-yami-')) {
-              console.log('DEBUG: Yamisskey version format detected');
+            const versionIncrementScript = process.env.VERSION_INCREMENT_SCRIPT;
+            console.log('DEBUG: Current version (from package.json): ' + currentVersion);
 
-              const parts = currentVersion.split('-');
-              if (parts.length >= 3) {
-                const baseVersion = parts[0];
-                const yamisskeyVersions = parts[2].split('.');
-
-                if (yamisskeyVersions.length === 3) {
-                  const yMajor = yamisskeyVersions[0];
-                  const yMinor = yamisskeyVersions[1];
-                  const yPatch = yamisskeyVersions[2];
-
-                  // yamiパッチ番号をインクリメント
-                  const releasePatch = Number(yPatch) + 1;
-                  const releaseVersion = baseVersion + '-yami-' + yMajor + '.' + yMinor + '.' + releasePatch;
-                  console.log('DEBUG: Release version: ' + releaseVersion);
-                  return releaseVersion;
-                }
-              }
+            // カスタムスクリプトが指定されている場合は実行
+            if (versionIncrementScript && versionIncrementScript.trim() !== '' && versionIncrementScript.trim() !== '#!/bin/bash\n#') {
+              console.log('DEBUG: Using custom version increment script');
+              const result = eval(versionIncrementScript);
+              console.log('DEBUG: Custom script result: ' + result);
+              return result;
             }
-            
-            // フォールバック: 基本的なバージョン形式
-            console.log('DEBUG: Using basic version increment');
-            const versionParts = currentVersion.split('.');
-            if (versionParts.length >= 3) {
-              const major = versionParts[0];
-              const minor = versionParts[1];
-              const patchPart = versionParts[2];
-              const patch = Number(patchPart.split('-')[0]) + 1;
-              
-              const incrementedVersion = major + '.' + minor + '.' + patch;
-              console.log('DEBUG: Basic increment result: ' + incrementedVersion);
-              return incrementedVersion;
-            }
-            
-            throw new Error('Unsupported version format: ' + currentVersion);
+
+            // デフォルト: package.jsonのバージョンをそのまま使用（Yamisskey手動管理）
+            console.log('DEBUG: Yamisskey workflow - using version as-is (manual management)');
+            return currentVersion;
           result-encoding: string
         id: target_version
       - name: Set release version

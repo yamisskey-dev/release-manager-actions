@@ -65,7 +65,7 @@ jobs:
       - name: Get target version
         uses: yamisskey-dev/release-manager-actions/.github/actions/get-target-version@v2-yamisskey
         id: v
-      # バージョンをインクリメント
+      # バージョンをインクリメント（Yamisskey形式対応）
       - name: Increment version
         uses: actions/script@v7
         env:
@@ -84,6 +84,15 @@ jobs:
             const reset_number_on_channel_change = process.env.reset_number_on_channel_change == 'true';
             const is_draft = process.env.pr_is_draft == 'true';
 
+            // Yamisskey形式 (例: 2025.12.0-yami-1.9.29) の場合
+            // Yamisskey運用: package.jsonの値をそのまま使用（手動管理）
+            const yamisskeyMatch = current_version.match(/^(\d+\.\d+\.\d+)-yami-(\d+)\.(\d+)\.(\d+)$/);
+            if (yamisskeyMatch) {
+              console.log('Yamisskey version (manual management): ' + current_version);
+              return current_version;
+            }
+
+            // 通常のMisskey形式 (例: 2025.12.0-rc.1)
             const parts = current_version.split('-');
             if (parts.length < 2) {
               throw new Error('Invalid version format: ' + current_version);

@@ -95,52 +95,14 @@ jobs:
     if: ${{ needs.get-pr.outputs.pr_number == '' }}
     with:
       user: 'github-actions[bot]'
-      # The script for version increment.
-      # process.env.CURRENT_VERSION: The current version.
-      #
-      # Yamisskey versioning (yyyy.MM.patch-yami-x.x.x) example
+      # Yamisskey運用: package.jsonのバージョンをそのまま使用（手動管理）
+      # 本家マージ時: ベースバージョンのみ更新（yamiは維持）
+      # 独自変更時: yamiパッチを手動でインクリメント
       version_increment_script: |
         const currentVersion = process.env.CURRENT_VERSION;
-        console.log('DEBUG: Current version: ' + currentVersion);
-
-        // Yamisskey形式の簡易チェック (yami統一)
-        if (currentVersion.includes('-yami-')) {
-          console.log('DEBUG: Yamisskey version format detected');
-
-          const parts = currentVersion.split('-');
-          if (parts.length >= 3) {
-            const baseVersion = parts[0];
-            const yamisskeyVersions = parts[2].split('.');
-
-            if (yamisskeyVersions.length === 3) {
-              const yMajor = yamisskeyVersions[0];
-              const yMinor = yamisskeyVersions[1];
-              const yPatch = yamisskeyVersions[2];
-
-              // yamiパッチ番号をインクリメント
-              const releasePatch = Number(yPatch) + 1;
-              const releaseVersion = baseVersion + '-yami-' + yMajor + '.' + yMinor + '.' + releasePatch;
-              console.log('DEBUG: Release version: ' + releaseVersion);
-              return releaseVersion;
-            }
-          }
-        }
-
-        // フォールバック：基本的なバージョン形式
-        console.log('DEBUG: Using basic version increment');
-        const versionParts = currentVersion.split('.');
-        if (versionParts.length >= 3) {
-          const major = versionParts[0];
-          const minor = versionParts[1];
-          const patchPart = versionParts[2];
-          const patch = Number(patchPart.split('-')[0]) + 1;
-
-          const incrementedVersion = major + '.' + minor + '.' + patch;
-          console.log('DEBUG: Basic increment result: ' + incrementedVersion);
-          return incrementedVersion;
-        }
-
-        throw new Error('Unsupported version format: ' + currentVersion);
+        console.log('DEBUG: Current version (from package.json): ' + currentVersion);
+        console.log('DEBUG: Yamisskey workflow - using version as-is (manual management)');
+        return currentVersion;
       ##Semver example
       #version_increment_script: |
       #  const [major, minor, patch] = process.env.CURRENT_VERSION.split('.');
