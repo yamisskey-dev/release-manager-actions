@@ -51,14 +51,32 @@ jobs:
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+      # PR 情報取得のため一旦 default branch を App token で checkout
       - uses: actions/checkout@v4
         with:
           token: ${{ steps.release-app-token.outputs.token }}
-      - name: Initialize
-        uses: misskey-dev/release-manager-actions/.github/actions/checkout-pr@v2
+      - name: Get PR head ref
+        id: get_pr
+        run: |
+          pr_json=$(gh pr view "$PR_NUMBER" --json isDraft,headRefName)
+          echo "pr_is_draft=$(echo $pr_json | jq -r '.isDraft')" >> $GITHUB_OUTPUT
+          echo "pr_head_ref=$(echo $pr_json | jq -r '.headRefName')" >> $GITHUB_OUTPUT
+          echo "$pr_json"
+        env:
+          PR_NUMBER: ${{ inputs.pr_number }}
+          GITHUB_TOKEN: ${{ steps.release-app-token.outputs.token }}
+      # PR ブランチを App token で checkout（checkout-pr の内部 checkout が
+      # default GITHUB_TOKEN で extraheader を上書きしてしまう問題の回避）
+      - uses: actions/checkout@v4
         with:
-          pr_number: ${{ inputs.pr_number }}
-          user: ${{ inputs.user }}
+          ref: ${{ steps.get_pr.outputs.pr_head_ref }}
+          token: ${{ steps.release-app-token.outputs.token }}
+      - name: git config
+        run: |
+          git config --local user.email "$USER@users.noreply.github.com"
+          git config --local user.name "$USER"
+        env:
+          USER: ${{ inputs.user }}
       - name: Get target version
         uses: misskey-dev/release-manager-actions/.github/actions/get-target-version@v2
         id: v
